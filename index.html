@@ -145,6 +145,7 @@ function printComanda(id){
 
 /* ---------- Vistas ---------- */
 function render(){
+  document.body.dataset.view = view;
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on', b.dataset.v===view));
   $('#app').innerHTML = ({nuevo:vNuevo,pedidos:vPedidos,caja:vCaja,semana:vSemana,productos:vProductos})[view]();
   if(view==='nuevo') refreshSum();
