@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="es-AR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Administración · Rotisería</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-mode="admin">
+<header>
+  <h1>Admin · Rotisería</h1>
+  <button class="syncb" id="sync" data-a="ssync" title="Estado de sincronización"></button>
+  <button class="btn sm danger session-end" data-a="sdisc">Cerrar sesión</button>
+  <nav>
+    <button data-a="go" data-v="dashboard">Dashboard</button>
+    <button data-a="go" data-v="productos">Productos y datos</button>
+  </nav>
+</header>
+<main id="app"></main>
+<div id="modal"></div>
+<div id="print"></div>
+<script src="app.js" defer></script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 /**
  * Backend de la rotiseria sobre Google Sheets.
- * Configura APP_TOKEN en Propiedades del script antes de implementar.
+ * Configura APP_TOKEN y ADMIN_TOKEN en Propiedades del script antes de implementar.
  */
 const HOJAS = {
   Productos: ['id', 'categoria', 'nombre', 'precio', 'costo', 'ingredientes'],
@@ -14,9 +14,37 @@ function token_() {
   return PropertiesService.getScriptProperties().getProperty('APP_TOKEN');
 }
 
-function autorizado_(token) {
-  const expected = token_();
-  return Boolean(expected && token && token === expected);
+function rol_(token) {
+  const appToken = token_();
+  const adminToken = PropertiesService.getScriptProperties().getProperty('ADMIN_TOKEN');
+  if (adminToken && adminToken !== appToken && token === adminToken) return 'admin';
+  if (appToken && token && token === appToken) return 'operator';
+  return '';
+}
+
+function catalogoOperador_(catalog) {
+  return {
+    products: catalog.products.map(function (product) { return Object.assign({}, product, { cost: null }); }),
+    cats: Object.keys(catalog.cats || {}).reduce(function (result, name) {
+      const category = catalog.cats[name];
+      result[name] = {
+        ings: category.ings || [],
+        extras: (category.extras || []).map(function (extra) { return Object.assign({}, extra, { cost: null }); })
+      };
+      return result;
+    }, {})
+  };
+}
+
+function pedidosOperador_(orders) {
+  return orders.map(function (order) {
+    const copy = JSON.parse(JSON.stringify(order));
+    copy.items.forEach(function (item) {
+      item.cost = null;
+      (item.ex || []).forEach(function (extra) { extra.cost = null; });
+    });
+    return copy;
+  });
 }
 
 function sheet_(name) {
@@ -59,10 +87,21 @@ function hora_(value) {
 
 function doGet(e) {
   try {
-    if (!e || !e.parameter || !autorizado_(e.parameter.token)) return out_({ ok: false, error: 'Clave incorrecta o APP_TOKEN sin configurar' });
-    if (e.parameter.action === 'catalog') return out_({ ok: true, catalog: leerCarta_() });
+    const role = e && e.parameter ? rol_(e.parameter.token) : '';
+    if (!role) return out_({ ok: false, error: 'Clave incorrecta o token sin configurar' });
+    if (e.parameter.action === 'catalog') {
+      const catalog = leerCarta_();
+      return out_({ ok: true, catalog: role === 'admin' ? catalog : catalogoOperador_(catalog) });
+    }
     if (e.parameter.action === 'state') {
-      return out_({ ok: true, catalog: leerCarta_(), orders: leerPedidos_(), moves: leerMovimientos_() });
+      const catalog = leerCarta_(), orders = leerPedidos_();
+      return out_({
+        ok: true,
+        role: role,
+        catalog: role === 'admin' ? catalog : catalogoOperador_(catalog),
+        orders: role === 'admin' ? orders : pedidosOperador_(orders),
+        moves: leerMovimientos_()
+      });
     }
     return out_({ ok: true });
   } catch (err) {
@@ -75,8 +114,10 @@ function doPost(e) {
   lock.waitLock(20000);
   try {
     const b = JSON.parse(e.postData.contents);
-    if (!autorizado_(b.token)) return out_({ ok: false, error: 'Clave incorrecta o APP_TOKEN sin configurar' });
+    const role = rol_(b.token);
+    if (!role) return out_({ ok: false, error: 'Clave incorrecta o token sin configurar' });
     if (b.action === 'catalog') {
+      if (role !== 'admin') return out_({ ok: false, error: 'Solo administracion puede modificar la carta' });
       escribirCarta_(b.catalog);
     } else if (b.action === 'push') {
       if (b.orders && b.orders.length) guardarPedidos_(b.orders);
@@ -182,6 +223,34 @@ function reemplazar_(name, rows) {
   if (rows.length) sh.getRange(2, 1, rows.length, cols).setValues(rows);
 }
 
+function costosDeCatalogo_() {
+  const catalog = leerCarta_();
+  const products = {};
+  Object.keys(catalog.products).forEach(function (key) {
+    const product = catalog.products[key];
+    products[String(product.id)] = product;
+  });
+  return { products: products, cats: catalog.cats };
+}
+
+function completarCostos_(order, previousOrder, catalog) {
+  const oldItems = previousOrder && previousOrder.items || [];
+  order.items.forEach(function (item, index) {
+    const oldItem = oldItems.find(function (candidate) { return item.lid && candidate.lid === item.lid; })
+      || oldItems[index] && oldItems[index].pid === item.pid && oldItems[index];
+    const product = catalog.products[String(item.pid)];
+    if (oldItem) item.cost = oldItem.cost;
+    else if (product) item.cost = product.cost;
+    const category = product && catalog.cats[product.cat];
+    item.ex = (item.ex || []).map(function (extra) {
+      const oldExtra = oldItem && (oldItem.ex || []).find(function (candidate) { return candidate.name === extra.name; });
+      const catalogExtra = category && (category.extras || []).find(function (candidate) { return candidate.name === extra.name; });
+      extra.cost = oldExtra ? oldExtra.cost : catalogExtra ? catalogExtra.cost : null;
+      return extra;
+    });
+  });
+}
+
 function guardarPedidos_(orders) {
   const sh = sheet_('Pedidos');
   const cols = HOJAS.Pedidos.length;
@@ -197,9 +266,13 @@ function guardarPedidos_(orders) {
     });
   }
   const nuevos = [];
+  const catalog = costosDeCatalogo_();
   orders.forEach(function (o) {
     const order = JSON.parse(o.json);
     const existing = pos[String(o.id)];
+    const previousOrder = existing ? JSON.parse(String(sh.getRange(existing.row, 13, 1, 1).getValues()[0][0] || '{}')) : null;
+    completarCostos_(order, previousOrder, catalog);
+    order.id = String(o.id);
     if (existing) {
       order.number = existing.number || order.number;
     } else {

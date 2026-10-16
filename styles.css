@@ -124,6 +124,37 @@ h3 {
   background: var(--card);
 }
 
+.auth-card {
+  width: min(100%, 440px);
+  margin: 8vh auto 0;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+}
+
+.auth-card input[type="password"] {
+  width: 100%;
+}
+
+.cash-balance {
+  margin: 0 0 18px;
+}
+
+.cash-balance b {
+  display: block;
+  margin-top: 4px;
+  font-size: 28px;
+}
+
+.locked nav {
+  display: none;
+}
+
+.locked .session-end {
+  display: none;
+}
+
 .grid2 {
   display: grid;
   grid-template-columns: 1.25fr 1fr;
@@ -694,7 +725,7 @@ tr.cathead td {
     bottom: 0;
     left: 0;
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 2px;
     padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
     border-top: 1px solid #4a443d;
@@ -782,6 +813,12 @@ tr.cathead td {
 
   .kpi b {
     font-size: 21px;
+  }
+}
+
+@media (max-width: 800px) {
+  body[data-mode="admin"] nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

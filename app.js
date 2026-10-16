@@ -13,17 +13,34 @@ function defaultCats(){
 }
 
 /* ---------- Datos ---------- */
-const LS = 'rotiseria_v1', LSS = 'rotiseria_sync';
+const IS_ADMIN = document.body.dataset.mode === 'admin';
+const LS = IS_ADMIN ? 'rotiseria_admin_v1' : 'rotiseria_v1';
+const LSS = IS_ADMIN ? 'rotiseria_sync_admin' : 'rotiseria_sync';
 let db = load();
+if(!IS_ADMIN){
+  costosParaRol(db);
+  try{ localStorage.setItem(LS,JSON.stringify(db)); }catch(e){}
+}
 function load(){
   let d = null;
   try{ d = JSON.parse(localStorage.getItem(LS)); }catch(e){}
   if(!d || !Array.isArray(d.orders)) return {products:[],orders:[],moves:[],cats:defaultCats()};
   const r = {products:d.products||[],orders:d.orders,moves:d.moves||[],cats:d.cats};
   if(!r.cats){ r.cats = defaultCats(); r.products = r.products.filter(p=>p.cat!=='Agregados'); } /* versión anterior: los agregados pasan a ser extras */
-  return r;
+  return costosParaRol(r);
+}
+function costosParaRol(state){
+  if(IS_ADMIN) return state;
+  state.products.forEach(p=>{ p.cost = null; });
+  Object.values(state.cats||{}).forEach(c=>(c.extras||[]).forEach(e=>{ e.cost = null; }));
+  state.orders.forEach(o=>(o.items||[]).forEach(i=>{
+    i.cost = null;
+    (i.ex||[]).forEach(e=>{ e.cost = null; });
+  }));
+  return state;
 }
 function save(){
+  costosParaRol(db);
   try{ localStorage.setItem(LS, JSON.stringify(db)); }
   catch(e){ alert('No se pudo guardar en este navegador. Exportá una copia desde "Productos y datos".'); }
   scheduleSync();
@@ -50,7 +67,12 @@ const splitList = s => String(s||'').split(',').map(x=>x.trim()).filter(Boolean)
 
 /* ---------- Ítems con modificaciones ---------- */
 const unitOf = i => i.price + sum(i.ex||[], e=>e.price);
-const unitCost = i => (i.cost||0) + sum(i.ex||[], e=>e.cost||0);
+const TEMP_UNIT_COST = 4000;
+const unitCost = i => {
+  const product = db.products.find(p=>String(p.id)===String(i.pid));
+  const base = i.cost!=null ? +i.cost : product&&product.cost!=null ? +product.cost : TEMP_UNIT_COST;
+  return base + sum(i.ex||[], e=>e.cost||0);
+};
 const modParts = i => (i.rm||[]).map(x=>'SIN '+x).concat((i.ex||[]).map(e=>'+ '+e.name)).concat(i.note?['“'+i.note+'”']:[]);
 const modsHTML = i => { const p = modParts(i); return p.length?'<div class="mods">'+p.map(esc).join(' · ')+'</div>':''; };
 const itemText = i => i.qty+' x '+i.name+(modParts(i).length?' ('+modParts(i).join(', ')+')':'');
@@ -67,7 +89,8 @@ const hasOpts = p => prodIngs(p).length>0 || prodExtras(p).length>0;
 /* ---------- Cálculos (todo derivado de pedidos y movimientos: no hay doble registro) ---------- */
 const live = o => o.status !== 'cancelado';
 const orderTotal = o => sum(o.items, i=>unitOf(i)*i.qty);
-const orderProfit = o => sum(o.items, i=>(unitOf(i)-unitCost(i))*i.qty);
+const orderCost = o => sum(o.items, i=>unitCost(i)*i.qty);
+const orderNet = o => orderTotal(o)-orderCost(o);
 const ordersOn = (a,b) => db.orders.filter(o=>live(o)&&dkey(o.createdAt)>=a&&dkey(o.createdAt)<=b);
 const cobrosOn = (a,b) => db.orders.filter(o=>live(o)&&o.paid&&dkey(o.paidAt)>=a&&dkey(o.paidAt)<=b);
 const movesOn = (a,b) => db.moves.filter(m=>m.date>=a&&m.date<=b);
@@ -77,10 +100,10 @@ function balanceUntil(method, k){
   db.moves.forEach(m=>{ if(m.method===method&&m.date<=k) s+= m.type==='entrada'?m.amount:-m.amount; });
   return s;
 }
-const missingCost = os => sum(os, o=>o.items.filter(i=>i.cost==null).length);
 
 /* ---------- Estado de pantalla ---------- */
-let view = 'pedidos';
+let view = IS_ADMIN ? 'dashboard' : 'pedidos';
+let apiAuthorized = false;
 let f = {date: today(), status: 'todos'};
 let cajaDate = today();
 let weekStart = mondayOf(today());
@@ -121,16 +144,28 @@ function printComanda(id){
 /* ---------- Vistas ---------- */
 function render(){
   document.body.dataset.view = view;
+  document.body.classList.toggle('locked',!apiAuthorized);
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on', b.dataset.v===view));
-  $('#app').innerHTML = ({nuevo:vNuevo,pedidos:vPedidos,caja:vCaja,semana:vSemana,productos:vProductos})[view]();
+  if(!apiAuthorized){ $('#app').innerHTML = vLogin(); paintSync(); return; }
+  const views = IS_ADMIN ? {dashboard:vSemana,productos:vProductos} : {pedidos:vPedidos,nuevo:vNuevo,caja:vCaja};
+  if(!views[view]) view = IS_ADMIN ? 'dashboard' : 'pedidos';
+  $('#app').innerHTML = views[view]();
   if(view==='nuevo') refreshSum();
   paintSync();
+}
+function vLogin(){
+  const title = IS_ADMIN ? 'Administración' : 'Conectar sistema';
+  const message = IS_ADMIN ? 'Ingresá la clave de administrador para ver el dashboard.' : 'Ingresá la clave de atención para acceder a pedidos y caja.';
+  return '<section class="auth-card"><h2>'+title+'</h2><p class="note">'+message+'</p>'
+    + '<label>Contraseña</label><input type="password" data-bind="stoken" autocomplete="current-password" placeholder="Ingresá tu clave">'
+    + '<div class="row spaced-top-sm"><button class="btn pri" data-a="sconnect">Ingresar</button></div>'
+    + '<p class="note flush-bottom" id="smsg">'+esc(syncMsg())+'</p></section>';
 }
 
 /* Nuevo / editar pedido */
 function vNuevo(){
   if(!db.products.length)
-    return '<div class="card empty"><p>Todavía no cargaste productos.</p><button class="btn pri" data-a="go" data-v="productos">Cargar productos</button></div>';
+    return '<div class="card empty"><p>La carta todavía no está cargada. Avisale a administración.</p></div>';
   const cats = catList(); if(!cats.includes(catSel)) catSel = cats[0];
   const ed = draft.editing ? ord(draft.editing) : null;
   return '<div class="grid2"><section><h2>'+(ed?'Editar pedido N° '+ed.number:'Nuevo pedido')+'</h2>'
@@ -240,27 +275,15 @@ function card(o){
 /* Caja */
 function vCaja(){
   const d = cajaDate;
-  const os = ordersOn(d,d);
-  const ventas = sum(os,orderTotal), gan = sum(os,orderProfit);
-  const porCobrar = sum(os.filter(o=>!o.paid),orderTotal);
   const cb = cobrosOn(d,d), mv = movesOn(d,d);
-  const part = m => {
-    const c = sum(cb.filter(o=>o.method===m),orderTotal);
-    const en = sum(mv.filter(x=>x.method===m&&x.type==='entrada'),x=>x.amount);
-    const sa = sum(mv.filter(x=>x.method===m&&x.type==='salida'),x=>x.amount);
-    return '<div class="kpi"><small>Saldo '+MET[m].toLowerCase()+' (al cierre de este día)</small><b>'+money(balanceUntil(m,d))+'</b>'
-      + '<div class="d">Del día: cobros <span class="pos">+'+money(c)+'</span> · entradas <span class="pos">+'+money(en)+'</span> · salidas <span class="neg">−'+money(sa)+'</span></div></div>';
-  };
+  const cash = balanceUntil('efectivo',d), transfer = balanceUntil('transferencia',d);
+  const total = cash+transfer;
   const rows = cb.map(o=>({ts:o.paidAt,txt:'Cobro pedido N° '+o.number,m:o.method,amt:orderTotal(o),auto:true}))
     .concat(mv.map(x=>({ts:x.ts,txt:(x.type==='entrada'?'Entrada: ':'Salida: ')+esc(x.concept),m:x.method,amt:x.type==='entrada'?x.amount:-x.amount,id:x.id})))
     .sort((a,b)=>b.ts-a.ts);
-  const mc = missingCost(os);
   let h = '<div class="row"><h2 class="sp">Caja · '+esc(fmtDate(d))+'</h2><input type="date" value="'+d+'" data-bind="cdate"><button class="btn" data-a="choy">Hoy</button></div>';
-  if(mc) h += '<div class="warn">'+mc+' producto(s) vendidos no tienen costo cargado: la ganancia estimada los toma con costo 0. Podés cargar el costo en "Productos y datos".</div>';
-  h += '<div class="kpis"><div class="kpi"><small>Ventas del día ('+os.length+' pedidos)</small><b>'+money(ventas)+'</b></div>'
-    + '<div class="kpi"><small>Ganancia bruta estimada</small><b>'+money(gan)+'</b></div>'
-    + '<div class="kpi"><small>Por cobrar</small><b>'+money(porCobrar)+'</b></div></div>';
-  h += '<div class="kpis">'+part('efectivo')+part('transferencia')+'</div>';
+  h += '<div class="kpi cash-balance"><small>Saldo total al cierre del día</small><b>'+money(total)+'</b>'
+    + '<div class="d">Efectivo '+money(cash)+' · Transferencia '+money(transfer)+'</div></div>';
   h += '<h3>Movimientos del día</h3>';
   h += rows.length ? '<table><tr><th>Hora</th><th>Detalle</th><th>Medio</th><th class="r">Monto</th><th></th></tr>'
     + rows.map(r=>'<tr><td>'+hhmm(r.ts)+'</td><td>'+r.txt+'</td><td>'+MET[r.m]+'</td><td class="r '+(r.amt<0?'neg':'pos')+'">'+(r.amt<0?'−':'+')+money(Math.abs(r.amt))+'</td>'
@@ -281,7 +304,7 @@ function vSemana(){
   const a = weekStart, b = addDays(a,6);
   const os = ordersOn(a,b), cb = cobrosOn(a,b), mv = movesOn(a,b);
   const canc = db.orders.filter(o=>!live(o)&&dkey(o.createdAt)>=a&&dkey(o.createdAt)<=b).length;
-  const ventas = sum(os,orderTotal), gan = sum(os,orderProfit);
+  const ventas = sum(os,orderTotal), costos = sum(os,orderCost), neto = ventas-costos;
   const cEf = sum(cb.filter(o=>o.method==='efectivo'),orderTotal), cTr = sum(cb.filter(o=>o.method==='transferencia'),orderTotal);
   const en = sum(mv.filter(x=>x.type==='entrada'),x=>x.amount), sa = sum(mv.filter(x=>x.type==='salida'),x=>x.amount);
   const days = [0,1,2,3,4,5,6].map(i=>addDays(a,i));
@@ -289,19 +312,20 @@ function vSemana(){
   os.forEach(o=>o.items.forEach(i=>{ const p = prod[i.name]||(prod[i.name]={q:0,t:0}); p.q+=i.qty; p.t+=unitOf(i)*i.qty; }));
   const top = Object.entries(prod).sort((x,y)=>y[1].q-x[1].q);
   const isCurrent = today()>=a && today()<=b;
-  const mc = missingCost(os);
-  let h = '<div class="row"><h2 class="sp">Semana del '+fmtShort(a)+' al '+fmtShort(b)+'</h2>'
+  let h = '<div class="row"><h2 class="sp">Dashboard · '+fmtShort(a)+' al '+fmtShort(b)+'</h2>'
     + '<button class="btn" data-a="wprev">← Anterior</button><button class="btn" data-a="wnow">Esta semana</button><button class="btn" data-a="wnext">Siguiente →</button></div>';
   if(isCurrent && today()<b) h += '<p class="note">Semana en curso: los números llegan hasta hoy y se completan al cerrar el domingo.</p>';
-  if(mc) h += '<div class="warn">'+mc+' producto(s) vendidos no tienen costo cargado: la ganancia los toma con costo 0.</div>';
-  h += '<div class="kpis"><div class="kpi"><small>Ventas ('+os.length+' pedidos)</small><b>'+money(ventas)+'</b><div class="d">Ticket promedio '+money(os.length?ventas/os.length:0)+'</div></div>'
-    + '<div class="kpi"><small>Ganancia bruta estimada</small><b>'+money(gan)+'</b></div>'
+  h += '<p class="note">Costo temporal: $ 4.000 por producto vendido cuando la hoja todavía no tiene un costo cargado.</p>';
+  h += '<div class="kpis"><div class="kpi"><small>Ventas brutas · '+os.length+' pedidos</small><b>'+money(ventas)+'</b><div class="d">Ticket promedio '+money(os.length?ventas/os.length:0)+'</div></div>'
+    + '<div class="kpi"><small>Costo de productos estimado</small><b>'+money(costos)+'</b></div>'
+    + '<div class="kpi"><small>Neto estimado</small><b>'+money(neto)+'</b><div class="d">Ventas brutas menos costo de productos</div></div>'
     + '<div class="kpi"><small>Cobrado</small><b>'+money(cEf+cTr)+'</b><div class="d">Efectivo '+money(cEf)+' · Transferencia '+money(cTr)+'</div></div>'
     + '<div class="kpi"><small>Movimientos manuales</small><b>'+money(en-sa)+'</b><div class="d">Entradas '+money(en)+' · Salidas '+money(sa)+'</div></div>'
     + '<div class="kpi"><small>Pedidos cancelados</small><b>'+canc+'</b></div></div>';
-  h += '<table><tr><th>Día</th><th class="r">Pedidos</th><th class="r">Ventas</th><th class="r">Ganancia est.</th><th class="r">Cobrado efectivo</th><th class="r">Cobrado transf.</th></tr>'
+  h += '<table><tr><th>Día</th><th class="r">Pedidos</th><th class="r">Ventas brutas</th><th class="r">Costo estimado</th><th class="r">Neto estimado</th><th class="r">Cobrado efectivo</th><th class="r">Cobrado transf.</th></tr>'
     + days.map(d=>{ const o = ordersOn(d,d), c = cobrosOn(d,d);
-      return '<tr><td>'+esc(fmtShort(d))+'</td><td class="r">'+o.length+'</td><td class="r">'+money(sum(o,orderTotal))+'</td><td class="r">'+money(sum(o,orderProfit))+'</td>'
+      const gross = sum(o,orderTotal), cost = sum(o,orderCost);
+      return '<tr><td>'+esc(fmtShort(d))+'</td><td class="r">'+o.length+'</td><td class="r">'+money(gross)+'</td><td class="r">'+money(cost)+'</td><td class="r">'+money(gross-cost)+'</td>'
         + '<td class="r">'+money(sum(c.filter(x=>x.method==='efectivo'),orderTotal))+'</td><td class="r">'+money(sum(c.filter(x=>x.method==='transferencia'),orderTotal))+'</td></tr>'; }).join('')
     + '</table>';
   h += '<h3 class="section-title">Productos más vendidos</h3>';
@@ -327,12 +351,9 @@ function vProductos(){
     });
     h += '</table></div>';
   } else h += '<div class="card empty note">Todavía no hay productos. Agregá el primero.</div>';
-  h += '<p class="note">El costo se usa solo para estimar la ganancia bruta. Cada pedido guarda precio y costo del momento: cambiar un producto no altera pedidos anteriores.</p>';
-  h += '<h2 class="section-heading">Google Sheets</h2><div class="card"><p class="note flush-top">La hoja es la fuente principal: la carta, los pedidos y la caja se leen y guardan allí para compartirlos entre dispositivos. La conexión ya está configurada; ingresá la clave en cada dispositivo.</p>'
-    + '<label>Clave de conexión</label><input data-bind="stoken" type="password" autocomplete="current-password" value="'+esc(sync.token)+'" placeholder="La clave APP_TOKEN">'
-    + '<div class="row spaced-top-sm"><button class="btn pri" data-a="sconnect">Guardar y conectar</button><button class="btn" data-a="ssync">Sincronizar ahora</button>'
-    + '<button class="btn" data-a="spush">Enviar carta de la app al Sheet</button><button class="btn danger" data-a="sdisc">Desconectar</button></div>'
-    + '<p class="note flush-bottom" id="smsg">'+esc(syncMsg())+'</p></div>';
+  h += '<p class="note">El costo permite estimar el neto. Si todavía no está cargado en la hoja, el dashboard usa provisionalmente $ 4.000 por unidad.</p>';
+  h += '<h2 class="section-heading">Datos</h2><div class="card"><p class="note flush-top">La carta y los costos se administran desde la hoja compartida.</p>'
+    + '<div class="row spaced-top-sm"><button class="btn" data-a="ssync">Sincronizar ahora</button></div></div>';
   h += '<h2 class="section-heading">Copia de seguridad</h2><div class="card"><p class="note flush-top">Los datos también se guardan en este navegador. Descargá una copia de vez en cuando, y antes de cambiar de equipo o borrar datos del navegador.</p>'
     + '<div class="row"><button class="btn" data-a="export">⬇ Descargar copia</button><button class="btn" data-a="import">⬆ Restaurar copia</button><input type="file" id="file" class="file-input" accept="application/json"></div></div>';
   return h;
@@ -340,12 +361,24 @@ function vProductos(){
 
 /* ---------- Sincronización con Google Sheets ---------- */
 const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbw0hbLhEpX5obfuvwxR98juGccOQ94qo8NLsqTeMMoSZ-kevZDBmyaOnZb13kotTrNg/exec';
+const ADMIN_SESSION = 'rotiseria_admin_session';
 function loadSync(){
   const base = {url:SHEETS_URL,token:'',sent:{},sentMoves:{},initialized:false,movesH:'',lastOk:0,catDirty:false};
-  try{ return Object.assign(base, JSON.parse(localStorage.getItem(LSS))||{},{url:SHEETS_URL}); }catch(e){ return base; }
+  try{
+    const stored = JSON.parse(localStorage.getItem(LSS))||{};
+    const token = IS_ADMIN ? sessionStorage.getItem(ADMIN_SESSION)||'' : stored.token||'';
+    return Object.assign(base,stored,{url:SHEETS_URL,token:token,catDirty:IS_ADMIN&&stored.catDirty});
+  }catch(e){ return base; }
 }
 let sync = loadSync(), syncState = sync.token ? 'idle' : 'off', syncErr = '', syncing = false, syncAgain = false, syncTimer = null;
-const saveSync = () => { try{ localStorage.setItem(LSS, JSON.stringify(sync)); }catch(e){} };
+const saveSync = () => {
+  const stored = Object.assign({},sync);
+  if(IS_ADMIN){
+    delete stored.token;
+    try{ if(sync.token) sessionStorage.setItem(ADMIN_SESSION,sync.token); else sessionStorage.removeItem(ADMIN_SESSION); }catch(e){}
+  }
+  try{ localStorage.setItem(LSS, JSON.stringify(stored)); }catch(e){}
+};
 const hash = s => { let h = 0; for(let i=0;i<s.length;i++) h = (h*31+s.charCodeAt(i))|0; return h+':'+s.length; };
 function syncMsg(){
   if(!sync.token) return 'Ingresá la clave para conectar este dispositivo.';
@@ -400,6 +433,11 @@ async function doSync(opt){
   try{
     const before = hash(JSON.stringify(db));
     const initial = await sreq('GET');
+    const expectedRole = IS_ADMIN ? 'admin' : 'operator';
+    if(!initial.role) throw new Error('Actualizá Code.gs y desplegá la nueva versión de Apps Script.');
+    if(initial.role!==expectedRole) throw new Error(IS_ADMIN ? 'La clave no habilita el acceso de administración.' : 'La clave no habilita el acceso de atención.');
+    const wasAuthorized = apiAuthorized;
+    apiAuthorized = true;
     const remoteOrders = Array.isArray(initial.orders) ? initial.orders : [];
     const remoteMoves = (Array.isArray(initial.moves) ? initial.moves : []).map(moveWithTimestamp);
     if(!sync.initialized){
@@ -409,7 +447,7 @@ async function doSync(opt){
       const localMoves = db.moves.filter(m=>!moveIds.has(String(m.id)));
       if(initial.catalog && Array.isArray(initial.catalog.products)){
         if(initial.catalog.products.length){ applyCatalog(initial.catalog); sync.catDirty = false; }
-        else if(db.products.length) sync.catDirty = true;
+        else if(IS_ADMIN&&db.products.length) sync.catDirty = true;
         else applyCatalog(initial.catalog);
       }
       db.orders = remoteOrders.concat(localOrders);
@@ -448,7 +486,7 @@ async function doSync(opt){
     try{ localStorage.setItem(LS, JSON.stringify(db)); }
     catch(e){ throw new Error('No se pudo guardar la copia local de los datos sincronizados.'); }
     sync.lastOk = Date.now(); saveSync(); syncState = 'ok'; syncErr = '';
-    if(stateChanged && !$('#modal').innerHTML) render();
+    if((stateChanged||!wasAuthorized) && !$('#modal').innerHTML) render();
   }catch(e){ success = false; syncState = 'error'; syncErr = (e && e.message) || String(e); saveSync(); }
   syncing = false; paintSync();
   if(syncAgain){ syncAgain = false; scheduleSync(); }
@@ -462,7 +500,10 @@ function scheduleSync(){
 
 /* ---------- Acciones ---------- */
 const A = {
-  go: d => { view = d.v; render(); },
+  go: d => {
+    const allowed = IS_ADMIN ? ['dashboard','productos'] : ['pedidos','nuevo','caja'];
+    if(allowed.includes(d.v)){ view = d.v; render(); }
+  },
   closem: () => closeModal(),
   /* nuevo pedido */
   cat: d => { catSel = d.c; render(); },
@@ -604,7 +645,7 @@ const A = {
   },
   ssync: () => doSync({pull:true}),
   spush: () => { if(!sync.token){ alert('Ingresá la clave y conectá primero.'); return; } if(!confirm('Esto reemplaza la carta del Sheet por la de la app. ¿Continuar?')) return; sync.catDirty = true; saveSync(); doSync({}); },
-  sdisc: () => { if(!confirm('¿Desconectar Google Sheets? Los datos de la app no se borran.')) return; sync = {url:SHEETS_URL,token:'',sent:{},sentMoves:{},initialized:false,movesH:'',lastOk:0,catDirty:false}; saveSync(); syncState = 'off'; render(); },
+  sdisc: () => { if(!confirm('¿Cerrar la sesión de administración en este navegador?')) return; sync = {url:SHEETS_URL,token:'',sent:{},sentMoves:{},initialized:false,movesH:'',lastOk:0,catDirty:false}; apiAuthorized = false; saveSync(); syncState = 'off'; render(); },
   /* datos */
   export: () => {
     const blob = new Blob([JSON.stringify(db,null,1)],{type:'application/json'});
