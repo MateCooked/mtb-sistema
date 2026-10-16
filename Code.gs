@@ -6,6 +6,9 @@ const HOJAS = {
   Productos: ['id', 'categoria', 'nombre', 'precio', 'costo', 'ingredientes'],
   Categorias: ['categoria', 'ingredientes'],
   Extras: ['categoria', 'nombre', 'precio', 'costo'],
+  Opciones: ['id', 'producto_id', 'grupo_id', 'grupo', 'tipo', 'nombre', 'precio', 'costo', 'obligatorio'],
+  Promociones: ['id', 'nombre', 'precio', 'activa', 'componentes_json'],
+  Configuracion: ['clave', 'valor'],
   Pedidos: ['id', 'numero', 'fecha', 'hora', 'cliente', 'detalle', 'observaciones', 'total', 'estado', 'pagado', 'medio', 'cobrado', 'json'],
   Movimientos: ['id', 'fecha', 'hora', 'tipo', 'medio', 'monto', 'concepto']
 };
@@ -24,7 +27,12 @@ function rol_(token) {
 
 function catalogoOperador_(catalog) {
   return {
-    products: catalog.products.map(function (product) { return Object.assign({}, product, { cost: null }); }),
+    products: catalog.products.map(function (product) {
+      return Object.assign({}, product, {
+        cost: null,
+        options: (product.options || []).map(function (option) { return Object.assign({}, option, { cost: null }); })
+      });
+    }),
     cats: Object.keys(catalog.cats || {}).reduce(function (result, name) {
       const category = catalog.cats[name];
       result[name] = {
@@ -32,7 +40,9 @@ function catalogoOperador_(catalog) {
         extras: (category.extras || []).map(function (extra) { return Object.assign({}, extra, { cost: null }); })
       };
       return result;
-    }, {})
+    }, {}),
+    promos: (catalog.promos || []).filter(function (promo) { return promo.active; }),
+    config: { meatExtraPrice: num_(catalog.config && catalog.config.meatExtraPrice) }
   };
 }
 
@@ -40,6 +50,12 @@ function pedidosOperador_(orders) {
   return orders.map(function (order) {
     const copy = JSON.parse(JSON.stringify(order));
     copy.items.forEach(function (item) {
+      if (item.type === 'promo') {
+        (item.components || []).forEach(function (component) {
+          component.cost = null;
+          (component.ex || []).forEach(function (extra) { extra.cost = null; });
+        });
+      }
       item.cost = null;
       (item.ex || []).forEach(function (extra) { extra.cost = null; });
     });
@@ -160,7 +176,34 @@ function leerCarta_() {
     if (!cats[c]) cats[c] = { ings: [], extras: [] };
     cats[c].extras.push({ name: String(ve[r][1]), price: num_(ve[r][2]), cost: costo_(ve[r][3]) });
   }
-  return { products: products, cats: cats };
+  const optionsByProduct = {};
+  const vo = sheet_('Opciones').getDataRange().getValues();
+  for (let r = 1; r < vo.length; r++) {
+    const row = vo[r], productId = String(row[1] || '');
+    if (!productId || !row[5]) continue;
+    if (!optionsByProduct[productId]) optionsByProduct[productId] = [];
+    optionsByProduct[productId].push({
+      id: String(row[0] || ''), groupId: String(row[2] || ''), group: String(row[3] || ''),
+      kind: String(row[4] || 'extra'), name: String(row[5]), price: num_(row[6]),
+      cost: costo_(row[7]), required: String(row[8]).toUpperCase() === 'SI'
+    });
+  }
+  products.forEach(function (product) { product.options = optionsByProduct[product.id] || []; });
+  const promos = [];
+  const vp = sheet_('Promociones').getDataRange().getValues();
+  for (let r = 1; r < vp.length; r++) {
+    const row = vp[r];
+    if (!row[0] || !row[1]) continue;
+    let components = [];
+    try { components = JSON.parse(String(row[4] || '[]')); } catch (err) { throw new Error('La promocion de la fila ' + (r + 1) + ' tiene componentes JSON invalidos.'); }
+    promos.push({ id: String(row[0]), name: String(row[1]), price: num_(row[2]), active: String(row[3]).toUpperCase() === 'SI', components: components });
+  }
+  const config = { meatExtraPrice: 1000 };
+  const vs = sheet_('Configuracion').getDataRange().getValues();
+  for (let r = 1; r < vs.length; r++) {
+    if (String(vs[r][0]) === 'meatExtraPrice') config.meatExtraPrice = num_(vs[r][1]);
+  }
+  return { products: products, cats: cats, promos: promos, config: config };
 }
 
 function leerPedidos_() {
@@ -213,6 +256,18 @@ function escribirCarta_(c) {
   });
   reemplazar_('Categorias', catRows);
   reemplazar_('Extras', exRows);
+  const optionRows = [];
+  (c.products || []).forEach(function (p) {
+    (p.options || []).forEach(function (option) {
+      optionRows.push([option.id || Utilities.getUuid(), p.id, option.groupId || '', option.group || '', option.kind || 'extra', option.name,
+        option.price || 0, option.cost === null || option.cost === undefined ? '' : option.cost, option.required ? 'SI' : 'NO']);
+    });
+  });
+  reemplazar_('Opciones', optionRows);
+  reemplazar_('Promociones', (c.promos || []).map(function (promo) {
+    return [promo.id, promo.name, promo.price, promo.active ? 'SI' : 'NO', JSON.stringify(promo.components || [])];
+  }));
+  reemplazar_('Configuracion', [['meatExtraPrice', c.config && c.config.meatExtraPrice != null ? c.config.meatExtraPrice : 1000]]);
 }
 
 function reemplazar_(name, rows) {
@@ -237,14 +292,27 @@ function completarCostos_(order, previousOrder, catalog) {
   const oldItems = previousOrder && previousOrder.items || [];
   order.items.forEach(function (item, index) {
     const oldItem = oldItems.find(function (candidate) { return item.lid && candidate.lid === item.lid; })
+      || oldItems.find(function (candidate) { return item.type === 'promo' && candidate.type === 'promo' && candidate.promoId === item.promoId; })
       || oldItems[index] && oldItems[index].pid === item.pid && oldItems[index];
+    if (item.type === 'promo') {
+      const oldComponents = oldItem && oldItem.components || [];
+      item.components = (item.components || []).map(function (component, componentIndex) {
+        const previousComponent = oldComponents.find(function (candidate) { return candidate.lid && candidate.lid === component.lid; }) || oldComponents[componentIndex];
+        completarCostos_({ items: [component] }, { items: previousComponent ? [previousComponent] : [] }, catalog);
+        return component;
+      });
+      item.cost = null;
+      return;
+    }
     const product = catalog.products[String(item.pid)];
     if (oldItem) item.cost = oldItem.cost;
     else if (product) item.cost = product.cost;
     const category = product && catalog.cats[product.cat];
     item.ex = (item.ex || []).map(function (extra) {
       const oldExtra = oldItem && (oldItem.ex || []).find(function (candidate) { return candidate.name === extra.name; });
-      const catalogExtra = category && (category.extras || []).find(function (candidate) { return candidate.name === extra.name; });
+      const catalogExtra = product && (product.options || []).find(function (option) {
+        return option.kind === 'extra' && ((extra.optionId && String(option.id) === String(extra.optionId)) || option.name === extra.name);
+      }) || category && (category.extras || []).find(function (candidate) { return candidate.name === extra.name; });
       extra.cost = oldExtra ? oldExtra.cost : catalogExtra ? catalogExtra.cost : null;
       return extra;
     });
