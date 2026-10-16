@@ -260,6 +260,34 @@ h3 {
   gap: 8px;
 }
 
+.spaced-top-xs {
+  margin-top: 10px;
+}
+
+.spaced-top-sm {
+  margin-top: 8px;
+}
+
+.spaced-top {
+  margin-top: 14px;
+}
+
+.section-title {
+  margin-top: 18px;
+}
+
+.section-heading {
+  margin-top: 24px;
+}
+
+.flush-top {
+  margin-top: 0;
+}
+
+.flush-bottom {
+  margin-bottom: 0;
+}
+
 .sp {
   flex: 1;
 }
@@ -284,6 +312,24 @@ input[type="number"] {
 input[type="date"] {
   width: auto;
   max-width: 100%;
+}
+
+.compact-field {
+  width: auto;
+}
+
+.movement-form .amount-field {
+  width: 130px;
+  text-align: left;
+}
+
+.concept-field {
+  min-width: 200px;
+  flex: 1;
+}
+
+.file-input {
+  display: none;
 }
 
 label {
@@ -667,6 +713,16 @@ tr.cathead td {
 
   .prods {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .movement-form > * {
+    flex: 1 1 140px;
+  }
+
+  .movement-form .amount-field,
+  .movement-form .concept-field {
+    min-width: 0;
+    flex-basis: 100%;
   }
 
   .prod {

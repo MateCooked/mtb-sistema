@@ -186,11 +186,11 @@ function sumHTML(){
     h += '<label>Pago</label><div class="row">'
       + '<button class="btn '+(!draft.paid?'sel':'')+'" data-a="setpaid" data-v="0">Pendiente de pago</button>'
       + '<button class="btn '+(draft.paid?'sel':'')+'" data-a="setpaid" data-v="1">Pagado</button></div>';
-    if(draft.paid) h += '<div class="row" style="margin-top:8px">'
+    if(draft.paid) h += '<div class="row spaced-top-sm">'
       + '<button class="btn '+(draft.method==='efectivo'?'sel':'')+'" data-a="setmethod" data-v="efectivo">Efectivo</button>'
       + '<button class="btn '+(draft.method==='transferencia'?'sel':'')+'" data-a="setmethod" data-v="transferencia">Transferencia</button></div>';
   }
-  h += '<div style="margin-top:14px" class="row"><button class="btn pri lg" data-a="savedraft">'+(ed?'Guardar cambios':'Guardar y generar comanda')+'</button>'
+  h += '<div class="row spaced-top"><button class="btn pri lg" data-a="savedraft">'+(ed?'Guardar cambios':'Guardar y generar comanda')+'</button>'
     + (ed?'<button class="btn" data-a="canceledit">Descartar cambios</button>':(draft.items.length?'<button class="btn" data-a="clear">Vaciar</button>':''))+'</div>';
   return h;
 }
@@ -213,7 +213,7 @@ function custHTML(){
   if(ings.length) h += '<label>Ingredientes · tocá para quitar</label><div class="chips">'+ings.map(n=>'<button class="chip '+(cust.rm.includes(n)?'rm':'')+'" data-a="crm" data-n="'+esc(n)+'">'+esc(n)+'</button>').join('')+'</div>';
   if(exs.length) h += '<label>Extras · tocá para agregar</label><div class="chips">'+exs.map(e=>'<button class="chip '+(cust.ex.includes(e.name)?'ex':'')+'" data-a="cex" data-n="'+esc(e.name)+'">'+(cust.ex.includes(e.name)?'✓ ':'+ ')+esc(e.name)+' '+money(e.price)+'</button>').join('')+'</div>';
   h += '<label>Nota para este producto (opcional)</label><input data-bind="cnote" value="'+esc(cust.note)+'" placeholder="Ej: bien cocida, cortar al medio">';
-  h += '<div class="row" style="margin-top:14px"><button class="btn pri lg" data-a="cadd">'+(cust.lid?'Guardar cambios':'Agregar')+' · '+money(unit*cust.qty)+'</button><button class="btn" data-a="closem">Cancelar</button></div>';
+  h += '<div class="row spaced-top"><button class="btn pri lg" data-a="cadd">'+(cust.lid?'Guardar cambios':'Agregar')+' · '+money(unit*cust.qty)+'</button><button class="btn" data-a="closem">Cancelar</button></div>';
   return h;
 }
 function addLine(line){
@@ -291,13 +291,13 @@ function vCaja(){
     + rows.map(r=>'<tr><td>'+hhmm(r.ts)+'</td><td>'+r.txt+'</td><td>'+MET[r.m]+'</td><td class="r '+(r.amt<0?'neg':'pos')+'">'+(r.amt<0?'−':'+')+money(Math.abs(r.amt))+'</td>'
       + '<td class="r">'+(r.auto?'<span class="note">automático</span>':'<button class="btn sm danger" data-a="delmove" data-id="'+r.id+'">Borrar</button>')+'</td></tr>').join('')+'</table>'
     : '<p class="note">Sin movimientos.</p>';
-  h += '<h3 style="margin-top:18px">Entrada o salida manual</h3><div class="card"><div class="row">'
-    + '<select id="mv-type" style="width:auto"><option value="entrada">Entrada</option><option value="salida">Salida</option></select>'
-    + '<select id="mv-method" style="width:auto"><option value="efectivo">Efectivo</option><option value="transferencia">Transferencia</option></select>'
-    + '<input id="mv-amount" type="number" min="0" step="0.01" placeholder="Monto" style="width:130px;text-align:left">'
-    + '<input id="mv-concept" placeholder="Concepto (ej: compra de pollos)" style="flex:1;min-width:200px">'
+  h += '<h3 class="section-title">Entrada o salida manual</h3><div class="card"><div class="row movement-form">'
+    + '<select id="mv-type" class="compact-field"><option value="entrada">Entrada</option><option value="salida">Salida</option></select>'
+    + '<select id="mv-method" class="compact-field"><option value="efectivo">Efectivo</option><option value="transferencia">Transferencia</option></select>'
+    + '<input id="mv-amount" class="amount-field" type="number" min="0" step="0.01" placeholder="Monto">'
+    + '<input id="mv-concept" class="concept-field" placeholder="Concepto (ej: compra de pollos)">'
     + '<button class="btn pri" data-a="addmove">Registrar</button></div>'
-    + '<p class="note" style="margin-bottom:0">Los cobros de pedidos entran solos a la caja; acá solo cargás lo que no es un pedido.</p></div>';
+    + '<p class="note flush-bottom">Los cobros de pedidos entran solos a la caja; acá solo cargás lo que no es un pedido.</p></div>';
   return h;
 }
 
@@ -329,7 +329,7 @@ function vSemana(){
       return '<tr><td>'+esc(fmtShort(d))+'</td><td class="r">'+o.length+'</td><td class="r">'+money(sum(o,orderTotal))+'</td><td class="r">'+money(sum(o,orderProfit))+'</td>'
         + '<td class="r">'+money(sum(c.filter(x=>x.method==='efectivo'),orderTotal))+'</td><td class="r">'+money(sum(c.filter(x=>x.method==='transferencia'),orderTotal))+'</td></tr>'; }).join('')
     + '</table>';
-  h += '<h3 style="margin-top:18px">Productos más vendidos</h3>';
+  h += '<h3 class="section-title">Productos más vendidos</h3>';
   h += top.length ? '<table><tr><th>Producto</th><th class="r">Unidades</th><th class="r">Importe (con extras)</th></tr>'
     + top.map(([n,p])=>'<tr><td>'+esc(n)+'</td><td class="r">'+p.q+'</td><td class="r">'+money(p.t)+'</td></tr>').join('')+'</table>'
     : '<p class="note">Sin ventas en la semana.</p>';
@@ -353,13 +353,13 @@ function vProductos(){
     h += '</table></div>';
   } else h += '<div class="card empty note">Todavía no hay productos. Agregá el primero.</div>';
   h += '<p class="note">El costo se usa solo para estimar la ganancia bruta. Cada pedido guarda precio y costo del momento: cambiar un producto no altera pedidos anteriores.</p>';
-  h += '<h2 style="margin-top:24px">Google Sheets</h2><div class="card"><p class="note" style="margin-top:0">La hoja es la fuente principal: la carta, los pedidos y la caja se leen y guardan allí para compartirlos entre dispositivos. La conexión ya está configurada; ingresá la clave en cada dispositivo.</p>'
+  h += '<h2 class="section-heading">Google Sheets</h2><div class="card"><p class="note flush-top">La hoja es la fuente principal: la carta, los pedidos y la caja se leen y guardan allí para compartirlos entre dispositivos. La conexión ya está configurada; ingresá la clave en cada dispositivo.</p>'
     + '<label>Clave de conexión</label><input data-bind="stoken" type="password" autocomplete="current-password" value="'+esc(sync.token)+'" placeholder="La clave APP_TOKEN">'
-    + '<div class="row" style="margin-top:12px"><button class="btn pri" data-a="sconnect">Guardar y conectar</button><button class="btn" data-a="ssync">Sincronizar ahora</button>'
+    + '<div class="row spaced-top-sm"><button class="btn pri" data-a="sconnect">Guardar y conectar</button><button class="btn" data-a="ssync">Sincronizar ahora</button>'
     + '<button class="btn" data-a="spush">Enviar carta de la app al Sheet</button><button class="btn danger" data-a="sdisc">Desconectar</button></div>'
-    + '<p class="note" id="smsg" style="margin-bottom:0">'+esc(syncMsg())+'</p></div>';
-  h += '<h2 style="margin-top:24px">Copia de seguridad</h2><div class="card"><p class="note" style="margin-top:0">Los datos también se guardan en este navegador. Descargá una copia de vez en cuando, y antes de cambiar de equipo o borrar datos del navegador.</p>'
-    + '<div class="row"><button class="btn" data-a="export">⬇ Descargar copia</button><button class="btn" data-a="import">⬆ Restaurar copia</button><input type="file" id="file" accept="application/json" style="display:none"></div></div>';
+    + '<p class="note flush-bottom" id="smsg">'+esc(syncMsg())+'</p></div>';
+  h += '<h2 class="section-heading">Copia de seguridad</h2><div class="card"><p class="note flush-top">Los datos también se guardan en este navegador. Descargá una copia de vez en cuando, y antes de cambiar de equipo o borrar datos del navegador.</p>'
+    + '<div class="row"><button class="btn" data-a="export">⬇ Descargar copia</button><button class="btn" data-a="import">⬆ Restaurar copia</button><input type="file" id="file" class="file-input" accept="application/json"></div></div>';
   return h;
 }
 
@@ -554,7 +554,7 @@ const A = {
   cobrar: d => { const o = ord(d.id);
     modal('<h3>Cobrar pedido N° '+o.number+'</h3><div class="big">'+money(orderTotal(o))+'</div><p class="note">Elegí cómo pagó:</p>'
       + '<div class="row"><button class="btn pri lg" data-a="pay" data-id="'+o.id+'" data-m="efectivo">Efectivo</button><button class="btn pri lg" data-a="pay" data-id="'+o.id+'" data-m="transferencia">Transferencia</button></div>'
-      + '<div style="margin-top:10px"><button class="btn" data-a="closem">Volver</button></div>'); },
+      + '<div class="spaced-top-xs"><button class="btn" data-a="closem">Volver</button></div>'); },
   pay: d => { const o = ord(d.id); if(o.paid) { closeModal(); return; } o.paid = true; o.method = d.m; o.paidAt = Date.now(); save(); closeModal(); render(); },
   undopay: d => { if(!confirm('¿Deshacer el cobro? Se descuenta de la caja.')) return; const o = ord(d.id); o.paid = false; o.method = null; o.paidAt = null; save(); render(); },
   cancel: d => { const o = ord(d.id);
@@ -582,7 +582,7 @@ const A = {
       + '<label>Precio de venta</label><input id="p-price" type="number" min="0" step="0.01" value="'+(p?p.price:'')+'">'
       + '<label>Costo (opcional, para estimar la ganancia)</label><input id="p-cost" type="number" min="0" step="0.01" value="'+(p&&p.cost!=null?p.cost:'')+'">'
       + '<label>Ingredientes propios (separados por coma). Vacío = usa los de la categoría</label><input id="p-ings" value="'+esc(p&&p.ings?p.ings.join(', '):'')+'">'
-      + '<div class="row" style="margin-top:14px"><button class="btn pri" data-a="psave" data-id="'+(p?p.id:'')+'">Guardar</button><button class="btn" data-a="closem">Cancelar</button></div>'); },
+      + '<div class="row spaced-top"><button class="btn pri" data-a="psave" data-id="'+(p?p.id:'')+'">Guardar</button><button class="btn" data-a="closem">Cancelar</button></div>'); },
   psave: d => {
     const cat = $('#p-cat').value.trim(), name = $('#p-name').value.trim(), price = parseFloat($('#p-price').value), cs = $('#p-cost').value.trim(), cost = cs===''?null:parseFloat(cs);
     const ings = splitList($('#p-ings').value);
@@ -596,7 +596,7 @@ const A = {
   catform: d => { const c = catCfg(d.c);
     modal('<h3>'+esc(d.c)+'</h3><label>Ingredientes que se pueden quitar (separados por coma)</label><input id="c-ings" value="'+esc(c.ings.join(', '))+'">'
       + '<label>Extras con precio (uno por línea: Nombre: precio, o Nombre: precio: costo)</label><textarea id="c-ex" rows="6">'+esc(c.extras.map(e=>e.name+': '+e.price+(e.cost!=null?': '+e.cost:'')).join('\n'))+'</textarea>'
-      + '<div class="row" style="margin-top:14px"><button class="btn pri" data-a="catsave" data-c="'+esc(d.c)+'">Guardar</button><button class="btn" data-a="closem">Cancelar</button></div>'); },
+      + '<div class="row spaced-top"><button class="btn pri" data-a="catsave" data-c="'+esc(d.c)+'">Guardar</button><button class="btn" data-a="closem">Cancelar</button></div>'); },
   catsave: d => {
     const extras = [];
     for(const line of $('#c-ex').value.split('\n')){
