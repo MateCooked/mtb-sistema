@@ -467,9 +467,8 @@ function vProductos(){
     h += '</table></div>';
   } else h += '<div class="card empty note">Todavía no hay productos. Agregá el primero.</div>';
   h += '<p class="note">El costo se usa solo para estimar la ganancia bruta. Cada pedido guarda precio y costo del momento: cambiar un producto no altera pedidos anteriores.</p>';
-  h += '<h2 style="margin-top:24px">Google Sheets</h2><div class="card"><p class="note" style="margin-top:0">La hoja es la fuente principal: la carta, los pedidos y la caja se leen y guardan allí para compartirlos entre dispositivos.</p>'
-    + '<label>URL de la aplicación web (Apps Script)</label><input data-bind="surl" value="'+esc(sync.url)+'" placeholder="https://script.google.com/macros/s/.../exec">'
-    + '<label>Clave</label><input data-bind="stoken" value="'+esc(sync.token)+'" placeholder="la misma que pusiste en Code.gs">'
+  h += '<h2 style="margin-top:24px">Google Sheets</h2><div class="card"><p class="note" style="margin-top:0">La hoja es la fuente principal: la carta, los pedidos y la caja se leen y guardan allí para compartirlos entre dispositivos. La conexión ya está configurada; ingresá la clave en cada dispositivo.</p>'
+    + '<label>Clave de conexión</label><input data-bind="stoken" type="password" autocomplete="current-password" value="'+esc(sync.token)+'" placeholder="La clave APP_TOKEN">'
     + '<div class="row" style="margin-top:12px"><button class="btn pri" data-a="sconnect">Guardar y conectar</button><button class="btn" data-a="ssync">Sincronizar ahora</button>'
     + '<button class="btn" data-a="spush">Enviar carta de la app al Sheet</button><button class="btn danger" data-a="sdisc">Desconectar</button></div>'
     + '<p class="note" id="smsg" style="margin-bottom:0">'+esc(syncMsg())+'</p></div>';
@@ -479,22 +478,23 @@ function vProductos(){
 }
 
 /* ---------- Sincronización con Google Sheets ---------- */
+const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbw0hbLhEpX5obfuvwxR98juGccOQ94qo8NLsqTeMMoSZ-kevZDBmyaOnZb13kotTrNg/exec';
 function loadSync(){
-  const base = {url:'',token:'',sent:{},sentMoves:{},initialized:false,movesH:'',lastOk:0,catDirty:false};
-  try{ return Object.assign(base, JSON.parse(localStorage.getItem(LSS))||{}); }catch(e){ return base; }
+  const base = {url:SHEETS_URL,token:'',sent:{},sentMoves:{},initialized:false,movesH:'',lastOk:0,catDirty:false};
+  try{ return Object.assign(base, JSON.parse(localStorage.getItem(LSS))||{},{url:SHEETS_URL}); }catch(e){ return base; }
 }
-let sync = loadSync(), syncState = sync.url ? 'idle' : 'off', syncErr = '', syncing = false, syncAgain = false, syncTimer = null;
+let sync = loadSync(), syncState = sync.token ? 'idle' : 'off', syncErr = '', syncing = false, syncAgain = false, syncTimer = null;
 const saveSync = () => { try{ localStorage.setItem(LSS, JSON.stringify(sync)); }catch(e){} };
 const hash = s => { let h = 0; for(let i=0;i<s.length;i++) h = (h*31+s.charCodeAt(i))|0; return h+':'+s.length; };
 function syncMsg(){
-  if(!sync.url) return 'Sin conectar.';
+  if(!sync.token) return 'Ingresá la clave para conectar este dispositivo.';
   if(syncState==='error') return 'Error: '+syncErr;
   return sync.lastOk ? 'Última sincronización: '+fmtShort(dkey(sync.lastOk))+' '+hhmm(sync.lastOk) : 'Conectado.';
 }
 function paintSync(){
   const b = $('#sync'); if(!b) return;
   b.className = 'syncb '+(syncState==='ok'?'ok':syncState==='error'?'err':'');
-  b.textContent = !sync.url ? '☁ Sheets: sin conectar' : syncState==='syncing' ? '☁ Sincronizando…' : syncState==='error' ? '⚠ Sin sincronizar' : '☁ Sincronizado'+(sync.lastOk?' '+hhmm(sync.lastOk):'');
+  b.textContent = !sync.token ? '☁ Sheets: falta clave' : syncState==='syncing' ? '☁ Sincronizando…' : syncState==='error' ? '⚠ Sin sincronizar' : '☁ Sincronizado'+(sync.lastOk?' '+hhmm(sync.lastOk):'');
   b.title = syncState==='error' ? syncErr : '';
   const m = $('#smsg'); if(m) m.textContent = syncMsg();
 }
@@ -531,7 +531,7 @@ const orderRow = o => ({id:o.id,number:o.number,date:dkey(o.createdAt),time:hhmm
 const moveRow = m => ({id:m.id,date:m.date,time:hhmm(m.ts),type:m.type,method:m.method,amount:m.amount,concept:m.concept});
 async function doSync(opt){
   opt = opt||{};
-  if(!sync.url) return false;
+  if(!sync.url || !sync.token) return false;
   if(syncing){ syncAgain = true; return false; }
   clearTimeout(syncTimer); syncTimer = null;
   syncing = true; syncState = 'syncing'; paintSync();
@@ -736,14 +736,14 @@ const A = {
     catChanged(); save(); render(); },
   /* Google Sheets */
   sconnect: async () => {
-    if(!sync.url || !sync.token){ alert('Completá la URL y la clave.'); return; }
+    if(!sync.token){ alert('Completá la clave de conexión.'); return; }
     saveSync();
     await doSync({pull:true});
     render();
   },
   ssync: () => doSync({pull:true}),
-  spush: () => { if(!sync.url){ alert('Conectá primero el Sheet.'); return; } if(!confirm('Esto reemplaza la carta del Sheet por la de la app. ¿Continuar?')) return; sync.catDirty = true; saveSync(); doSync({}); },
-  sdisc: () => { if(!confirm('¿Desconectar Google Sheets? Los datos de la app no se borran.')) return; sync = {url:'',token:'',sent:{},movesH:'',lastOk:0,catDirty:false}; saveSync(); syncState = 'off'; render(); },
+  spush: () => { if(!sync.token){ alert('Ingresá la clave y conectá primero.'); return; } if(!confirm('Esto reemplaza la carta del Sheet por la de la app. ¿Continuar?')) return; sync.catDirty = true; saveSync(); doSync({}); },
+  sdisc: () => { if(!confirm('¿Desconectar Google Sheets? Los datos de la app no se borran.')) return; sync = {url:SHEETS_URL,token:'',sent:{},sentMoves:{},initialized:false,movesH:'',lastOk:0,catDirty:false}; saveSync(); syncState = 'off'; render(); },
   /* datos */
   export: () => {
     const blob = new Blob([JSON.stringify(db,null,1)],{type:'application/json'});
@@ -760,7 +760,6 @@ document.addEventListener('input', e => {
   if(b==='customer') draft.customer = e.target.value;
   else if(b==='notes') draft.notes = e.target.value;
   else if(b==='cnote' && cust) cust.note = e.target.value;
-  else if(b==='surl'){ sync.url = e.target.value.trim(); saveSync(); }
   else if(b==='stoken'){ sync.token = e.target.value.trim(); saveSync(); }
 });
 document.addEventListener('change', e => {
@@ -786,9 +785,9 @@ document.addEventListener('change', e => {
 });
 window.addEventListener('afterprint', () => { $('#print').innerHTML = ''; });
 window.addEventListener('online', () => doSync({pull:true}));
-setInterval(() => { if(sync.url && !$('#modal').innerHTML) doSync({pull:true}); }, 120000);
+setInterval(() => { if(sync.token && !$('#modal').innerHTML) doSync({pull:true}); }, 120000);
 render();
-if(sync.url) doSync({pull:true});
+if(sync.token) doSync({pull:true});
 </script>
 </body>
 </html>
