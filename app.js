@@ -126,8 +126,8 @@ const modsHTML = i => { const p = modParts(i); return p.length?'<div class="mods
 const itemText = i => i.qty+' x '+i.name+(i.type==='promo'?' ['+(i.components||[]).map(itemText).join('; ')+']':modParts(i).length?' ('+modParts(i).join(', ')+')':'');
 const lineKey = i => [i.type||'product',i.pid||i.promoId||'',i.pattyCount||1,(i.rm||[]).slice().sort().join(','),(i.ex||[]).map(e=>e.name).sort().join(','),JSON.stringify(i.choices||{}),i.note||'',i.type==='promo'?JSON.stringify((i.components||[]).map(lineKey)):''].join('|');
 function orderItemHTML(item){
-  if(item.type==='promo') return '<div class="it"><b>'+item.qty+' × '+esc(item.name)+'</b><div class="promo-order-items">'+(item.components||[]).map(component=>'<div>'+component.qty+' × '+esc(component.name)+modsHTML(component)+'</div>').join('')+'</div></div>';
-  return '<div class="it"><b>'+item.qty+' × '+esc(item.name)+'</b>'+modsHTML(item)+'</div>';
+  if(item.type==='promo') return '<div class="it"><b>'+item.qty+' × '+esc(item.name)+'</b></div>';
+  return '<div class="it"><b>'+item.qty+' × '+esc(item.name)+'</b> <span class="note">'+money(unitOf(item))+' c/u</span>'+modsHTML(item)+'</div>';
 }
 function ticketModsHTML(item){ return modParts(item).map(part=>'<div class="t-d">'+esc(part)+'</div>').join(''); }
 function ticketItemHTML(item){
